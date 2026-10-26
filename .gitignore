@@ -1,0 +1,32 @@
+# Maven build output
+target/
+pom.xml.versionsBackup
+pom.xml.releaseBackup
+release.properties
+dependency-reduced-pom.xml
+
+# Source snapshot archives
+ccnb-src.zip
+
+# NetBeans per-user project files
+nbproject/private/
+nbactions*.xml
+nb-configuration.xml
+.nb-gradle/
+
+# Other IDEs
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Java crash and replay logs
+hs_err_pid*.log
+replay_pid*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*~

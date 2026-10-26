@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>dev.claudecode</groupId>
+    <artifactId>claude-code-netbeans</artifactId>
+    <version>1.0.0</version>
+    <packaging>nbm</packaging>
+
+    <name>Claude Code</name>
+    <description>Connects the Claude Code CLI to Apache NetBeans: diff review, selection context, @-mentions.</description>
+
+    <properties>
+        <!-- Oldest NetBeans the module targets; it also runs on newer releases. -->
+        <netbeans.version>RELEASE220</netbeans.version>
+        <maven.compiler.release>17</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-modules</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-util</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-util-lookup</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-awt</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-dialogs</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-windows</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-filesystems</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-loaders</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-nodes</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-openide-text</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-netbeans-modules-editor-lib2</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-netbeans-modules-projectapi</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-netbeans-modules-projectuiapi</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-netbeans-modules-projectuiapi-base</artifactId><version>${netbeans.version}</version></dependency>
+        <dependency><groupId>org.netbeans.api</groupId><artifactId>org-netbeans-modules-diff</artifactId><version>${netbeans.version}</version></dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.netbeans.utilities</groupId>
+                <artifactId>nbm-maven-plugin</artifactId>
+                <version>14.4</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <codeNameBase>dev.claudecode.netbeans</codeNameBase>
+                    <author>Claude Code for NetBeans</author>
+                    <useOSGiDependencies>false</useOSGiDependencies>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+            </plugin>
+            <plugin>
+                <!-- the nbm plugin generates the module manifest; the jar must use it -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <!-- JDK 23+ no longer runs annotation processors implicitly; NetBeans
+                 registrations (@ActionRegistration, @OnStart, @Messages) need them. -->
+            <id>annotation-processing</id>
+            <activation><jdk>[21,)</jdk></activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <proc>full</proc>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
