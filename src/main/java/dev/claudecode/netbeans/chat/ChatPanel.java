@@ -53,6 +53,7 @@ import javax.swing.text.DefaultEditorKit;
 public final class ChatPanel extends JPanel {
 
     private static final long serialVersionUID = 1L;
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(ChatPanel.class.getName());
 
     public enum Mode {
         ASK("default", "Ask before edits"),
@@ -89,6 +90,9 @@ public final class ChatPanel extends JPanel {
 
     private transient ClaudeSession session;
     private File sessionDir;
+    /** Projects Claude was last told about, and whether it needs to be told again. */
+    private transient List<ChatHost.ProjectInfo> toldProjects = List.of();
+    private boolean projectsStale;
     private boolean busy;
     private boolean changingMode;
     private transient ChatHost.EditorContext context;
@@ -122,7 +126,21 @@ public final class ChatPanel extends JPanel {
         header.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, HtmlView.Theme.border()),
                 BorderFactory.createEmptyBorder(4, 8, 4, 4)));
-        header.add(title, BorderLayout.WEST);
+        JLabel version = new JLabel(dev.claudecode.netbeans.core.PluginVersion.shortText());
+        version.setForeground(HtmlView.Theme.dim());
+        version.setFont(version.getFont().deriveFont(Font.PLAIN, version.getFont().getSize2D() - 1f));
+        version.setToolTipText("Claude Code for NetBeans " + dev.claudecode.netbeans.core.PluginVersion.longText());
+        JPanel titleBox = new JPanel();
+        titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
+        titleBox.setOpaque(false);
+        title.setAlignmentX(0f);
+        version.setAlignmentX(0f);
+        titleBox.add(title);
+        titleBox.add(version);
+        JPanel titleWrap = new JPanel(new java.awt.GridBagLayout()); // centers the title row vertically
+        titleWrap.setOpaque(false);
+        titleWrap.add(titleBox);
+        header.add(titleWrap, BorderLayout.WEST);
         header.add(tools, BorderLayout.EAST);
         add(header, BorderLayout.NORTH);
 
@@ -249,6 +267,9 @@ public final class ChatPanel extends JPanel {
         if (text.isEmpty() || busy) {
             return;
         }
+        if (session == null && waitForProjects()) {
+            return; // send() runs again once NetBeans has opened its projects
+        }
         refreshContext();
         ChatHost.EditorContext ctx = contextBox.isEnabled() && contextBox.isSelected() ? context : null;
         if (!ensureSession(null)) {
@@ -256,7 +277,7 @@ public final class ChatPanel extends JPanel {
         }
         input.setText("");
         addUserMessage(text, ctx);
-        session.sendUserMessage(withContext(text, ctx));
+        session.sendUserMessage(projectUpdate() + withContext(text, ctx));
         setBusy(true);
         startActivity();
     }
@@ -284,7 +305,9 @@ public final class ChatPanel extends JPanel {
         stopSession();
         clearTranscript();
         addInfo("Continuing your previous conversation. Earlier messages aren't shown here, but Claude remembers them.");
-        ensureSession(id);
+        if (ensureSession(id)) {
+            projectsStale = true; // a resumed chat keeps its old project list; send the current one
+        }
         focusInput();
     }
 
@@ -300,9 +323,11 @@ public final class ChatPanel extends JPanel {
             return false;
         }
         sessionDir = host.workingDirectory();
+        List<ChatHost.ProjectInfo> projects = openProjects();
         Mode mode = (Mode) modeBox.getSelectedItem();
         ClaudeSession[] holder = new ClaudeSession[1];
-        holder[0] = new ClaudeSession(ClaudeSession.buildCommand(ClaudeCli.command(exe), mode.cli, resumeId),
+        holder[0] = new ClaudeSession(ClaudeSession.buildCommand(ClaudeCli.command(exe), mode.cli, resumeId,
+                extraDirs(projects, sessionDir), describeProjects(projects, sessionDir)),
                 sessionDir, ClaudeCli.environment(exe), new Events(holder));
         try {
             holder[0].start();
@@ -311,7 +336,14 @@ public final class ChatPanel extends JPanel {
             return false;
         }
         session = holder[0];
-        addInfo("Working in " + sessionDir.getName() + "  (" + sessionDir.getAbsolutePath() + ")");
+        toldProjects = projects;
+        projectsStale = false;
+        LOG.info("Claude Code chat started in " + sessionDir + " with " + projects.size() + " open project(s): "
+                + projects.stream().map(ChatHost.ProjectInfo::name).collect(java.util.stream.Collectors.joining(", ")));
+        addInfo("Working in " + sessionDir.getName() + "  (" + sessionDir.getAbsolutePath() + "). "
+                + (projects.isEmpty() ? "NetBeans reported no open projects."
+                        : "Claude can see " + (projects.size() == 1 ? "the 1 open project."
+                                : "all " + projects.size() + " open projects.")));
         return true;
     }
 
@@ -429,6 +461,157 @@ public final class ChatPanel extends JPanel {
                 ? "Include selection: " + name + (ctx.startLine() == ctx.endLine()
                         ? " line " + ctx.startLine() : " lines " + ctx.startLine() + "–" + ctx.endLine())
                 : "Include open file: " + name);
+    }
+
+    // ------------------------------------------------------------------ open projects
+
+    private Timer projectWait;
+    private long projectWaitStart;
+
+    /**
+     * If NetBeans is still opening projects, waits (without blocking the UI) and
+     * sends the message afterwards. Returns true while waiting.
+     */
+    private boolean waitForProjects() {
+        if (sendAfterWait) {
+            return false; // the wait just ended (or timed out): send now
+        }
+        boolean loading;
+        try {
+            loading = host.projectsLoading();
+        } catch (RuntimeException e) {
+            loading = false;
+        }
+        if (!loading) {
+            return false;
+        }
+        if (projectWait == null) {
+            projectWaitStart = System.currentTimeMillis();
+            status.setText("Waiting for NetBeans to finish opening projects…");
+            sendButton.setEnabled(false);
+            projectWait = new Timer(300, e -> {
+                boolean still;
+                try {
+                    still = host.projectsLoading();
+                } catch (RuntimeException ex) {
+                    still = false;
+                }
+                if (!still || System.currentTimeMillis() - projectWaitStart > 20_000) {
+                    ((Timer) e.getSource()).stop();
+                    projectWait = null;
+                    sendButton.setEnabled(true);
+                    status.setText(" ");
+                    sendAfterWait = true;
+                    try {
+                        send();
+                    } finally {
+                        sendAfterWait = false;
+                    }
+                }
+            });
+            projectWait.start();
+        }
+        return true;
+    }
+
+    private boolean sendAfterWait;
+
+    private List<ChatHost.ProjectInfo> openProjects() {
+        try {
+            List<ChatHost.ProjectInfo> ps = host.openProjects();
+            return ps == null ? List.of() : List.copyOf(ps);
+        } catch (RuntimeException | LinkageError e) {
+            LOG.log(java.util.logging.Level.WARNING, "Could not read the open projects", e);
+            return List.of();
+        }
+    }
+
+    /** Text to put before the user's message when the open projects changed since Claude was told. */
+    private String projectUpdate() {
+        List<ChatHost.ProjectInfo> now = openProjects();
+        if (!projectsStale && now.equals(toldProjects)) {
+            return "";
+        }
+        boolean resumed = projectsStale;
+        toldProjects = now;
+        projectsStale = false;
+        return "<ide_open_projects>" + (resumed
+                ? "The projects currently open in NetBeans are listed below."
+                : "The projects open in NetBeans have changed. They are now:")
+                + "\n" + projectList(now, sessionDir)
+                + (resumed ? "" : "\nFolders of projects opened since this conversation started may ask for "
+                        + "permission before you can use them.")
+                + "</ide_open_projects>\n\n";
+    }
+
+    /** Folders to pass with --add-dir: every open project outside the working directory. */
+    static List<String> extraDirs(List<ChatHost.ProjectInfo> projects, File cwd) {
+        List<String> dirs = new ArrayList<>();
+        Path base = cwd == null ? null : cwd.toPath().toAbsolutePath().normalize();
+        for (ChatHost.ProjectInfo p : projects) {
+            if (p.path() == null) {
+                continue;
+            }
+            Path dir = Path.of(p.path()).toAbsolutePath().normalize();
+            if (base != null && dir.startsWith(base)) {
+                continue; // already reachable through the working directory
+            }
+            if (!dirs.contains(dir.toString())) {
+                dirs.add(dir.toString());
+            }
+        }
+        return dirs;
+    }
+
+    /** Appended to Claude's system prompt when a chat starts. */
+    static String describeProjects(List<ChatHost.ProjectInfo> projects, File cwd) {
+        StringBuilder sb = new StringBuilder("The user is working in the Apache NetBeans IDE and is talking to you "
+                + "through its Claude Code chat panel.\n");
+        if (projects.isEmpty()) {
+            sb.append("No projects are open in NetBeans right now.");
+            return sb.toString();
+        }
+        sb.append("These projects are open in NetBeans, and you can read and edit files in all of them:\n")
+                .append(projectList(projects, cwd))
+                .append("\nWhen the user mentions a project by name, find it in this list. \"The project\" means "
+                        + "the one in the current working directory unless the user says otherwise.");
+        return sb.toString();
+    }
+
+    static String projectList(List<ChatHost.ProjectInfo> projects, File cwd) {
+        if (projects.isEmpty()) {
+            return "(none)";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (ChatHost.ProjectInfo p : projects) {
+            sb.append("- ").append(p.name()).append(" — ").append(p.path());
+            List<String> notes = new ArrayList<>();
+            if (p.kind() != null) {
+                notes.add(p.kind() + " project");
+            }
+            if (p.main()) {
+                notes.add("main project");
+            }
+            if (samePath(p.path(), cwd)) {
+                notes.add("current working directory");
+            }
+            if (!notes.isEmpty()) {
+                sb.append(" (").append(String.join(", ", notes)).append(')');
+            }
+            sb.append('\n');
+        }
+        return sb.toString().stripTrailing();
+    }
+
+    static boolean samePath(String path, File dir) {
+        if (path == null || dir == null) {
+            return false;
+        }
+        try {
+            return Path.of(path).toAbsolutePath().normalize().equals(dir.toPath().toAbsolutePath().normalize());
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     static String withContext(String text, ChatHost.EditorContext ctx) {
@@ -815,7 +998,8 @@ public final class ChatPanel extends JPanel {
                 + "<p class=\"dim\">Ask about your code, or ask Claude to change it. "
                 + "Proposed edits open as a diff for you to accept or reject.</p>"
                 + "<p class=\"dim\">Your editor selection is sent along when the box above the message field is ticked. "
-                + "Use the menu at the top to let Claude edit without asking, or to plan first.</p>");
+                + "Use the menu at the top to let Claude edit without asking, or to plan first.</p>"
+                + "<p class=\"dim\">Plugin " + Markdown.escape(dev.claudecode.netbeans.core.PluginVersion.longText()) + "</p>");
         append(v);
     }
 
@@ -1001,6 +1185,17 @@ public final class ChatPanel extends JPanel {
                 Path p = Path.of(path).toAbsolutePath().normalize();
                 if (p.startsWith(base)) {
                     return base.relativize(p).toString();
+                }
+            }
+            // a file in another open project: show it as <project folder>/<path inside it>
+            Path p = Path.of(path).toAbsolutePath().normalize();
+            for (ChatHost.ProjectInfo info : toldProjects) {
+                if (info.path() == null) {
+                    continue;
+                }
+                Path dir = Path.of(info.path()).toAbsolutePath().normalize();
+                if (p.startsWith(dir) && dir.getFileName() != null) {
+                    return dir.getFileName().resolve(dir.relativize(p)).toString();
                 }
             }
         } catch (RuntimeException ignored) {

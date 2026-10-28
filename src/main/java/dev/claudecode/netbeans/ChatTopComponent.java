@@ -7,12 +7,19 @@ import dev.claudecode.netbeans.core.Ide;
 import java.awt.BorderLayout;
 import java.io.File;
 import java.net.URI;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.text.JTextComponent;
 import org.netbeans.api.editor.EditorRegistry;
+import org.netbeans.api.project.Project;
+import org.netbeans.api.project.ProjectUtils;
+import org.netbeans.api.project.ui.OpenProjects;
+import org.openide.filesystems.FileUtil;
 import org.openide.awt.HtmlBrowser;
 import org.openide.util.NbPreferences;
 import org.openide.windows.Mode;
@@ -100,6 +107,53 @@ public final class ChatTopComponent extends TopComponent implements ChatHost {
     @Override
     public File workingDirectory() {
         return StartClaudeAction.workingDirectory();
+    }
+
+    @Override
+    public boolean projectsLoading() {
+        return !OpenProjects.getDefault().openProjects().isDone();
+    }
+
+    @Override
+    public List<ProjectInfo> openProjects() {
+        Project main = OpenProjects.getDefault().getMainProject();
+        List<ProjectInfo> list = new ArrayList<>();
+        for (Project p : OpenProjects.getDefault().getOpenProjects()) {
+            File dir = FileUtil.toFile(p.getProjectDirectory());
+            if (dir == null) {
+                continue;
+            }
+            String name;
+            try {
+                name = ProjectUtils.getInformation(p).getDisplayName();
+            } catch (RuntimeException e) {
+                name = dir.getName();
+            }
+            list.add(new ProjectInfo(name, dir.getAbsolutePath(), p.equals(main), buildKind(dir)));
+        }
+        list.sort(Comparator.comparing((ProjectInfo i) -> !i.main())
+                .thenComparing(i -> i.name().toLowerCase(java.util.Locale.ROOT)));
+        return list;
+    }
+
+    private static String buildKind(File dir) {
+        if (new File(dir, "pom.xml").isFile()) {
+            return "Maven";
+        }
+        if (new File(dir, "build.gradle").isFile() || new File(dir, "build.gradle.kts").isFile()
+                || new File(dir, "settings.gradle").isFile() || new File(dir, "settings.gradle.kts").isFile()) {
+            return "Gradle";
+        }
+        if (new File(dir, "nbproject/project.xml").isFile()) {
+            return "Ant";
+        }
+        if (new File(dir, "package.json").isFile()) {
+            return "Node.js";
+        }
+        if (new File(dir, "composer.json").isFile()) {
+            return "PHP";
+        }
+        return null;
     }
 
     @Override

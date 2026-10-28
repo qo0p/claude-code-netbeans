@@ -121,6 +121,15 @@ public final class ClaudeSession {
      * @param resumeSessionId continue an earlier conversation, or null
      */
     public static List<String> buildCommand(List<String> cli, String permissionMode, String resumeSessionId) {
+        return buildCommand(cli, permissionMode, resumeSessionId, List.of(), null);
+    }
+
+    /**
+     * @param extraDirs    more folders Claude may read and edit besides the working directory
+     * @param systemPrompt text appended to Claude Code's system prompt, or null
+     */
+    public static List<String> buildCommand(List<String> cli, String permissionMode, String resumeSessionId,
+                                            List<String> extraDirs, String systemPrompt) {
         List<String> c = new ArrayList<>(cli);
         c.addAll(List.of("-p",
                 "--input-format", "stream-json",
@@ -132,6 +141,12 @@ public final class ClaudeSession {
                 "--disallowedTools", "AskUserQuestion"));
         if (permissionMode != null && !permissionMode.equals("default")) {
             c.addAll(List.of("--permission-mode", permissionMode));
+        }
+        for (String dir : extraDirs) {
+            c.addAll(List.of("--add-dir", dir));
+        }
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            c.addAll(List.of("--append-system-prompt", systemPrompt));
         }
         if (resumeSessionId != null && !resumeSessionId.isBlank()) {
             c.addAll(List.of("--resume", resumeSessionId));

@@ -13,6 +13,10 @@ public interface ChatHost {
         }
     }
 
+    /** A project open in the IDE. {@code kind} is e.g. "Maven", "Gradle", "Ant" or null. */
+    record ProjectInfo(String name, String path, boolean main, String kind) {
+    }
+
     /** A diff shown to the user. The future completes with true when accepted. */
     interface DiffReview {
         CompletableFuture<Boolean> result();
@@ -23,6 +27,14 @@ public interface ChatHost {
     }
 
     File workingDirectory();
+
+    /** Projects currently open in the IDE, main project first. */
+    java.util.List<ProjectInfo> openProjects();
+
+    /** True while the IDE is still opening projects (for example right after startup). */
+    default boolean projectsLoading() {
+        return false;
+    }
 
     EditorContext editorContext();
 

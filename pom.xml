@@ -6,13 +6,16 @@
 
     <groupId>dev.claudecode</groupId>
     <artifactId>claude-code-netbeans</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>nbm</packaging>
 
     <name>Claude Code</name>
     <description>Connects the Claude Code CLI to Apache NetBeans: diff review, selection context, @-mentions.</description>
 
     <properties>
+        <!-- stamped into version.properties so the chat window can show which build is installed -->
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <build.time>${maven.build.timestamp}</build.time>
         <!-- Oldest NetBeans the module targets; it also runs on newer releases. -->
         <netbeans.version>RELEASE220</netbeans.version>
         <maven.compiler.release>17</maven.compiler.release>
@@ -38,6 +41,22 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>**/version.properties</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>**/version.properties</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.netbeans.utilities</groupId>

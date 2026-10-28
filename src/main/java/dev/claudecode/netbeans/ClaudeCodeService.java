@@ -42,6 +42,7 @@ public final class ClaudeCodeService {
         if (server != null) {
             return;
         }
+        LOG.info("Claude Code for NetBeans " + dev.claudecode.netbeans.core.PluginVersion.longText());
         ClaudeIdeServer s = new ClaudeIdeServer("NetBeans", new NetBeansIde());
         try {
             s.start();

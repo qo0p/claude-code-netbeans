@@ -8,6 +8,7 @@ A NetBeans module that brings **Claude Code** into Apache NetBeans, like the off
 
 - Answers stream in as Claude writes them, with formatting and code blocks.
 - Each step Claude takes (reading files, searching, running commands) is listed as it happens.
+- Claude knows which projects are open in NetBeans (names, folders, main project, Maven/Gradle/Ant) and can read and edit files in all of them. The chat starts in the project of the file you're editing; if you open or close projects during a chat, Claude is told with your next message.
 - A live line at the bottom shows what Claude is doing right now (waiting, thinking, preparing or running a tool, writing) with a running timer. It turns red if Claude Code goes quiet for more than 30 seconds.
 - Thinking steps appear as "Thought for 4s · ~200 tokens". Claude Code doesn't currently pass on the thinking text itself; if it does, click the line to read it.
 - **Edits open as a NetBeans diff.** Accept or Reject in the diff tab or in the chat. *Accept all edits* switches to editing without asking.
@@ -52,7 +53,7 @@ If your Maven settings point at a company repository you can't reach, build agai
 mvn -U -s build-settings.xml -gs build-settings.xml package
 ```
 
-The installable module is `target/claude-code-netbeans-1.0.0.nbm`.
+The installable module is `target/claude-code-netbeans-<version>.nbm`. The chat window header shows the installed version and when it was built.
 
 ## Install
 

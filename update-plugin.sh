@@ -10,25 +10,27 @@ cd "$(dirname "$0")"
 say()  { printf '%s\n' "$*"; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
-# ---------------------------------------------------------------- NetBeans user folder
-# The folder holding config/, modules/ and var/log/messages.log. Prefer the one that
-# already has this plugin, then the one NetBeans used most recently.
-find_userdir() {
+# ---------------------------------------------------------------- NetBeans user folders
+# Folders holding config/, modules/ and var/log/messages.log, one per NetBeans version.
+# The plugin is installed into every one that already has it; if none has it yet,
+# into the one NetBeans used most recently. NB_USERDIR picks one yourself.
+find_userdirs() {
     if [ -n "${NB_USERDIR:-}" ]; then echo "$NB_USERDIR"; return; fi
-    local best="" best_time=0 has_plugin=0 d t p
+    local newest="" newest_time=0 d t found=0
     for d in "$HOME/snap/netbeans/current" "$HOME"/.local/share/NetBeans/*/ "$HOME"/.netbeans/*/ \
              "$HOME/Library/Application Support/NetBeans"/*/; do
         d="${d%/}"
         [ -f "$d/var/log/messages.log" ] || continue
         # skip very old NetBeans (8.x and earlier can't run this plugin)
         grep -q "Product Version *= *NetBeans IDE [0-8]\." "$d/var/log/messages.log" 2>/dev/null && continue
-        t=$(stat -c %Y "$d/var/log/messages.log" 2>/dev/null || stat -f %m "$d/var/log/messages.log")
-        p=0; [ -f "$d/modules/dev-claudecode-netbeans.jar" ] && p=1
-        if [ "$p" -gt "$has_plugin" ] || { [ "$p" -eq "$has_plugin" ] && [ "$t" -gt "$best_time" ]; }; then
-            best="$d"; best_time="$t"; has_plugin="$p"
+        d=$(cd "$d" && pwd -P)
+        if [ -f "$d/modules/dev-claudecode-netbeans.jar" ]; then
+            echo "$d"; found=1
         fi
+        t=$(stat -c %Y "$d/var/log/messages.log" 2>/dev/null || stat -f %m "$d/var/log/messages.log")
+        if [ "$t" -gt "$newest_time" ]; then newest="$d"; newest_time="$t"; fi
     done
-    [ -n "$best" ] && echo "$best"
+    if [ "$found" -eq 0 ] && [ -n "$newest" ]; then echo "$newest"; fi
 }
 
 # ---------------------------------------------------------------- Maven
@@ -54,10 +56,9 @@ java_major() { # prints the major version of the java Maven would use
     "$1" -v 2>/dev/null | sed -n 's/^Java version: \([0-9]*\).*/\1/p' | head -n 1
 }
 
-USERDIR=$(find_userdir) || true
-[ -n "$USERDIR" ] || fail "Couldn't find your NetBeans user folder. Start NetBeans once, or set NB_USERDIR."
-USERDIR=$(cd "$USERDIR" && pwd -P)
-LOG="$USERDIR/var/log/messages.log"
+mapfile -t USERDIRS < <(find_userdirs | awk '!seen[$0]++')
+[ "${#USERDIRS[@]}" -gt 0 ] || fail "Couldn't find your NetBeans user folder. Start NetBeans once, or set NB_USERDIR."
+LOG="${USERDIRS[0]}/var/log/messages.log"
 
 MVN=$(find_mvn) || fail "Couldn't find Maven. Install it, or run: MVN=/path/to/mvn $0"
 
@@ -72,16 +73,20 @@ if [ -z "$JV" ] || [ "$JV" -lt 17 ]; then
 fi
 [ -n "$JV" ] && [ "$JV" -ge 17 ] || fail "Maven needs JDK 17 or newer (found: ${JV:-none}). Set JAVA_HOME to a JDK 17+."
 
-say "NetBeans user folder: $USERDIR"
-say "  $(sed -n 's/^ *Product Version *= *//p' "$LOG" | tail -n 1)"
+for U in "${USERDIRS[@]}"; do
+    say "NetBeans user folder: $U ($(sed -n 's/^ *Product Version *= *//p' "$U/var/log/messages.log" | tail -n 1))"
+done
 say "Maven: $MVN (Java $JV${JAVA_HOME:+, $JAVA_HOME})"
+say "Source: $PWD"
 
 # ---------------------------------------------------------------- NetBeans must be closed
 # NetBeans keeps a "lock" file in its user folder while it runs.
-if [ -e "$USERDIR/lock" ] && pgrep -f "org.netbeans.Main|netbeans/platform/lib/boot.jar" >/dev/null 2>&1 \
-   && [ "${1:-}" != "--force" ]; then
-    fail "NetBeans is still running. Quit it first (File > Exit), then run this again."
-fi
+for U in "${USERDIRS[@]}"; do
+    if [ -e "$U/lock" ] && pgrep -f "org.netbeans.Main|netbeans/platform/lib/boot.jar" >/dev/null 2>&1 \
+       && [ "${1:-}" != "--force" ]; then
+        fail "NetBeans is still running. Quit it first (File > Exit), then run this again."
+    fi
+done
 
 # ---------------------------------------------------------------- build
 say "Building…"
@@ -110,14 +115,25 @@ extract() { # extract <zip> <entry> <dest-file>
         python3 -c 'import sys,zipfile; sys.stdout.buffer.write(zipfile.ZipFile(sys.argv[1]).read(sys.argv[2]))' "$1" "$2" > "$3"
     fi
 }
-mkdir -p "$USERDIR/modules" "$USERDIR/config/Modules"
-extract "$NBM" netbeans/modules/dev-claudecode-netbeans.jar "$USERDIR/modules/dev-claudecode-netbeans.jar.new" \
-    && mv -f "$USERDIR/modules/dev-claudecode-netbeans.jar.new" "$USERDIR/modules/dev-claudecode-netbeans.jar" \
-    || fail "Couldn't copy the plugin into $USERDIR/modules"
-if [ ! -f "$USERDIR/config/Modules/dev-claudecode-netbeans.xml" ]; then
-    extract "$NBM" netbeans/config/Modules/dev-claudecode-netbeans.xml "$USERDIR/config/Modules/dev-claudecode-netbeans.xml"
-fi
-
 say ""
-say "Installed into $USERDIR/modules/dev-claudecode-netbeans.jar"
+for U in "${USERDIRS[@]}"; do
+    mkdir -p "$U/modules" "$U/config/Modules"
+    extract "$NBM" netbeans/modules/dev-claudecode-netbeans.jar "$U/modules/dev-claudecode-netbeans.jar.new" \
+        && mv -f "$U/modules/dev-claudecode-netbeans.jar.new" "$U/modules/dev-claudecode-netbeans.jar" \
+        || fail "Couldn't copy the plugin into $U/modules"
+    if [ ! -f "$U/config/Modules/dev-claudecode-netbeans.xml" ]; then
+        extract "$NBM" netbeans/config/Modules/dev-claudecode-netbeans.xml "$U/config/Modules/dev-claudecode-netbeans.xml"
+    fi
+    say "Installed into $U/modules/dev-claudecode-netbeans.jar"
+done
+# show the version stamped into the jar that was just built
+JAR_TMP=$(mktemp)
+if extract "$NBM" netbeans/modules/dev-claudecode-netbeans.jar "$JAR_TMP" 2>/dev/null; then
+    PROPS=$(extract "$JAR_TMP" dev/claudecode/netbeans/version.properties /dev/stdout 2>/dev/null)
+    V=$(printf '%s\n' "$PROPS" | sed -n 's/^version=//p')
+    B=$(printf '%s\n' "$PROPS" | sed -n 's/^built=//p')
+    B_LOCAL=$(date -d "$B" '+%-d %b %H:%M' 2>/dev/null || echo "$B")
+    say "Plugin version: v${V:-?} · built ${B_LOCAL:-?}  (the chat window header shows the same)"
+fi
+rm -f "$JAR_TMP"
 say "Start NetBeans and open Tools > Claude Code Chat (Ctrl+Esc)."
