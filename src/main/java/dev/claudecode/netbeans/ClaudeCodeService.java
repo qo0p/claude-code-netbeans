@@ -43,6 +43,7 @@ public final class ClaudeCodeService {
             return;
         }
         LOG.info("Claude Code for NetBeans " + dev.claudecode.netbeans.core.PluginVersion.longText());
+        dev.claudecode.netbeans.actions.ChatShortcut.install();
         ClaudeIdeServer s = new ClaudeIdeServer("NetBeans", new NetBeansIde());
         try {
             s.start();
@@ -76,6 +77,7 @@ public final class ClaudeCodeService {
     }
 
     synchronized void stop() {
+        dev.claudecode.netbeans.actions.ChatShortcut.uninstall();
         if (projectsListener != null) {
             OpenProjects.getDefault().removePropertyChangeListener(projectsListener);
             projectsListener = null;

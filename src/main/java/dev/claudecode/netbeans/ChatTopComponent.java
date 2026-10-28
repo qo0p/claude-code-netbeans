@@ -48,15 +48,21 @@ public final class ChatTopComponent extends TopComponent implements ChatHost {
     /** Opens (or shows) the chat window and focuses the message box. Call on the Swing thread. */
     public static void showChat() {
         ChatTopComponent tc = instance();
+        WindowManager wm = WindowManager.getDefault();
         if (!tc.isOpened()) {
-            Mode mode = WindowManager.getDefault().findMode("properties");
+            Mode mode = wm.findMode("properties");
             if (mode == null) {
-                mode = WindowManager.getDefault().findMode("explorer");
+                mode = wm.findMode("explorer");
             }
             if (mode != null) {
                 mode.dockInto(tc);
             }
             tc.open();
+        }
+        // A minimized (sliding) window would hide again as soon as it loses focus,
+        // so always show the chat docked.
+        if (wm.isTopComponentMinimized(tc)) {
+            wm.setTopComponentMinimized(tc, false);
         }
         tc.requestActive();
         tc.panel.focusInput();
