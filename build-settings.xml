@@ -1,22 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- Builds against Maven Central directly, bypassing any company mirror
      configured in Maven's global or user settings. Use:
-     mvn -s build-settings.xml -gs build-settings.xml package
-
-     The mirror reuses the company mirror's id (archiva.internal) on purpose:
-     Maven records the repository id of every download in the local repository,
-     and the NetBeans IDE (which always reads ~/.m2/settings.xml) only reuses
-     artifacts recorded under an id it knows. Matching the id lets the IDE load
-     the project from what this build downloaded. -->
+     mvn -s build-settings.xml -gs build-settings.xml package -->
 <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
-  <mirrors>
-    <mirror>
-      <id>archiva.internal</id>
-      <mirrorOf>*</mirrorOf>
-      <name>Maven Central</name>
-      <url>https://repo.maven.apache.org/maven2</url>
-    </mirror>
-  </mirrors>
+  <mirrors/>
 </settings>

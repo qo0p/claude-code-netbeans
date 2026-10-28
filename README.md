@@ -8,6 +8,8 @@ A NetBeans module that brings **Claude Code** into Apache NetBeans, like the off
 
 - Answers stream in as Claude writes them, with formatting and code blocks.
 - Each step Claude takes (reading files, searching, running commands) is listed as it happens.
+- A live line at the bottom shows what Claude is doing right now (waiting, thinking, preparing or running a tool, writing) with a running timer. It turns red if Claude Code goes quiet for more than 30 seconds.
+- Thinking steps appear as "Thought for 4s · ~200 tokens". Claude Code doesn't currently pass on the thinking text itself; if it does, click the line to read it.
 - **Edits open as a NetBeans diff.** Accept or Reject in the diff tab or in the chat. *Accept all edits* switches to editing without asking.
 - Commands and other actions ask first: **Allow**, **Always allow** (for this conversation), or **Deny**.
 - The mode menu switches between **Ask before edits**, **Edit automatically**, and **Plan mode**. In plan mode Claude proposes a plan and waits for your approval before touching code.
@@ -26,6 +28,16 @@ If you prefer Claude Code in a terminal, the module also connects a terminal ses
 - **Start Claude Code in Terminal** (Tools menu, **Ctrl+Alt+Shift+T**) – opens a terminal in the current project with `claude` already connected.
 - Claude can also open files, list open editors and projects, check for unsaved changes, and save documents.
 
+## Build and install (quick way)
+
+Quit NetBeans, then run:
+
+```
+./update-plugin.sh
+```
+
+It finds Maven and your NetBeans user folder, builds the plugin, and installs it. Start NetBeans again afterwards. Use the same command after every update.
+
 ## Build
 
 Requires JDK 17+ and Maven 3.9+.
@@ -39,8 +51,6 @@ If your Maven settings point at a company repository you can't reach, build agai
 ```
 mvn -U -s build-settings.xml -gs build-settings.xml package
 ```
-
-Run this once before opening the project in NetBeans: the IDE always resolves through your own Maven settings, and `build-settings.xml` records its downloads under the id of the company mirror (`archiva.internal`), so the IDE can reuse them. If your mirror has a different id, change the `<id>` in `build-settings.xml` to match.
 
 The installable module is `target/claude-code-netbeans-1.0.0.nbm`.
 

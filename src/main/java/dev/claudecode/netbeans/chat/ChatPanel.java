@@ -93,6 +93,10 @@ public final class ChatPanel extends JPanel {
     private boolean changingMode;
     private transient ChatHost.EditorContext context;
     private HtmlView streaming;
+    private final ActivityRow activity = new ActivityRow(this::tickThinking);
+    private ThinkingView thinking;
+    private String runningToolPhase;
+    private String runningToolExtra;
     private final StringBuilder streamText = new StringBuilder();
     private final Map<String, ToolLine> toolLines = new HashMap<>();
     private final Set<String> alwaysAllow = new HashSet<>();
@@ -212,6 +216,7 @@ public final class ChatPanel extends JPanel {
         contextTimer = new Timer(500, e -> refreshContext());
         contextTimer.start();
         refreshContext();
+        installAutoScroll();
         showWelcome();
     }
 
@@ -253,14 +258,14 @@ public final class ChatPanel extends JPanel {
         addUserMessage(text, ctx);
         session.sendUserMessage(withContext(text, ctx));
         setBusy(true);
-        status.setText("Thinking…");
+        startActivity();
     }
 
     void stop() {
         if (session != null && busy) {
             cancelOpenCards("Cancelled");
             session.interrupt();
-            status.setText("Stopping…");
+            activity.setPhase("Stopping", null);
         }
     }
 
@@ -327,6 +332,68 @@ public final class ChatPanel extends JPanel {
         busy = b;
         sendButton.setEnabled(!b);
         stopButton.setEnabled(b);
+        if (!b) {
+            stopActivity();
+        }
+    }
+
+    // ------------------------------------------------------------------ live activity
+
+    private void startActivity() {
+        status.setText(" ");
+        thinking = null;
+        runningToolPhase = null;
+        activity.start();
+        if (activity.getParent() != transcript) {
+            transcript.add(activity);
+        }
+        relayout();
+        scrollToBottom();
+    }
+
+    private void stopActivity() {
+        activity.stop();
+        finishThinking();
+        thinking = null;
+        if (activity.getParent() == transcript) {
+            transcript.remove(activity);
+            relayout();
+        }
+    }
+
+    private void tickThinking() {
+        if (thinking != null) {
+            thinking.tick();
+        }
+    }
+
+    private void finishThinking() {
+        if (thinking != null) {
+            thinking.finish();
+        }
+    }
+
+    private void startThinking() {
+        finishStreaming();
+        finishThinking();
+        thinking = new ThinkingView(this::relayout);
+        append(thinking);
+        activity.setPhase("Thinking", null);
+    }
+
+    /** After the user answers an approval card, show Claude as working again. */
+    private void resumeActivity() {
+        if (busy && activity.isRunning()) {
+            if (runningToolPhase != null) {
+                activity.setToolRunning(runningToolPhase, runningToolExtra);
+            } else {
+                activity.setPhase("Continuing", null);
+            }
+        }
+    }
+
+    static String size(int chars) {
+        return chars < 1000 ? chars + " chars" : String.format(Locale.ROOT, "%.1fk chars", chars / 1000.0);
     }
 
     private void setMode(Mode m, boolean tellCli) {
@@ -409,8 +476,67 @@ public final class ChatPanel extends JPanel {
         }
 
         @Override
+        public void onThinkingStart() {
+            ui(ChatPanel.this::startThinking);
+        }
+
+        @Override
+        public void onThinkingDelta(String text) {
+            ui(() -> {
+                if (thinking == null || thinking.isFinished()) {
+                    startThinking();
+                }
+                thinking.addText(text);
+                activity.touch();
+            });
+        }
+
+        @Override
+        public void onThinkingTokens(int estimatedTokens) {
+            ui(() -> {
+                if (thinking != null) {
+                    thinking.setTokens(estimatedTokens);
+                    if (!thinking.isFinished()) {
+                        activity.setExtra("~" + estimatedTokens + " tokens");
+                    }
+                }
+                activity.touch();
+            });
+        }
+
+        @Override
+        public void onThinkingEnd() {
+            ui(() -> {
+                finishThinking();
+                activity.setPhase("Working", null);
+            });
+        }
+
+        @Override
+        public void onToolInputProgress(String toolName, int chars) {
+            ui(() -> {
+                finishThinking();
+                activity.setPhase("Preparing " + ToolLine.displayName(toolName), chars > 0 ? size(chars) : null);
+            });
+        }
+
+        @Override
+        public void onTaskSummary(String summary) {
+            ui(() -> {
+                activity.setDetail(summary);
+                activity.touch();
+            });
+        }
+
+        @Override
         public void onTextDelta(String text) {
             ui(() -> {
+                finishThinking();
+                if (!"Writing".equals(activity.phase())) {
+                    activity.setPhase("Writing", null);
+                } else {
+                    activity.touch();
+                }
                 if (streaming == null) {
                     streaming = addAssistantView();
                     streamText.setLength(0);
@@ -439,9 +565,13 @@ public final class ChatPanel extends JPanel {
         public void onToolUse(String toolUseId, String name, Map<String, Object> toolInput) {
             ui(() -> {
                 finishStreaming();
+                finishThinking();
                 ToolLine line = new ToolLine(name, toolInput);
                 toolLines.put(toolUseId, line);
                 append(line);
+                runningToolPhase = "Running " + ToolLine.displayName(name);
+                runningToolExtra = line.shortSummary();
+                activity.setToolRunning(runningToolPhase, runningToolExtra);
             });
         }
 
@@ -453,6 +583,8 @@ public final class ChatPanel extends JPanel {
                     line.finish(text, isError);
                     relayout();
                 }
+                runningToolPhase = null;
+                activity.setPhase("Waiting for Claude", null);
             });
         }
 
@@ -465,9 +597,11 @@ public final class ChatPanel extends JPanel {
         public void onStatus(String s) {
             ui(() -> {
                 if ("requesting".equals(s)) {
-                    status.setText("Thinking…");
+                    activity.setPhase("Waiting for Claude", null);
                 } else if ("compacting".equals(s)) {
-                    status.setText("Compacting the conversation…");
+                    activity.setPhase("Compacting the conversation", null);
+                } else if ("retrying".equals(s)) {
+                    activity.setPhase("Connection problem, retrying", null);
                 } else if ("compacted".equals(s)) {
                     addInfo("Earlier messages were summarized to free up space.");
                 }
@@ -522,6 +656,8 @@ public final class ChatPanel extends JPanel {
             return;
         }
         finishStreaming();
+        finishThinking();
+        activity.setWaitingOnUser("Waiting for your approval");
         if (ProposedEdit.isFileEdit(r.toolName()) && reviewEdit(owner, r)) {
             return;
         }
@@ -684,6 +820,7 @@ public final class ChatPanel extends JPanel {
     }
 
     private void clearTranscript() {
+        stopActivity();
         transcript.removeAll();
         toolLines.clear();
         openCards.clear();
@@ -720,12 +857,8 @@ public final class ChatPanel extends JPanel {
 
     private void renderStreaming() {
         if (streaming != null) {
-            boolean pinned = atBottom();
             streaming.setMarkdown(streamText.toString());
             relayout();
-            if (pinned) {
-                scrollToBottom();
-            }
         }
     }
 
@@ -756,12 +889,15 @@ public final class ChatPanel extends JPanel {
     }
 
     private void append(JComponent c) {
-        boolean pinned = atBottom();
-        transcript.add(c);
-        relayout();
-        if (pinned || c instanceof Card) {
-            scrollToBottom();
+        if (c != activity && activity.getParent() == transcript) {
+            transcript.add(c, transcript.getComponentCount() - 1);
+        } else {
+            transcript.add(c);
         }
+        if (c instanceof Card) {
+            follow = true; // a question for the user must be seen
+        }
+        relayout();
     }
 
     private void relayout() {
@@ -769,16 +905,72 @@ public final class ChatPanel extends JPanel {
         transcript.repaint();
     }
 
-    private boolean atBottom() {
-        JScrollBar b = scroll.getVerticalScrollBar();
-        return b.getValue() + b.getVisibleAmount() >= b.getMaximum() - 40;
+    // ------------------------------------------------------------------ follow new output
+
+    /**
+     * True while the view should stay pinned to the newest output. Turned off
+     * when the user scrolls up, back on when they scroll to the bottom, send a
+     * message or answer a card.
+     */
+    private boolean follow = true;
+    private boolean scrollingProgrammatically;
+    private int lastScrollValue;
+
+    private void installAutoScroll() {
+        JScrollBar bar = scroll.getVerticalScrollBar();
+        bar.getModel().addChangeListener(e -> {
+            int value = bar.getValue();
+            if (value == lastScrollValue) {
+                return; // content grew or shrank but the user didn't scroll
+            }
+            lastScrollValue = value;
+            if (!scrollingProgrammatically) {
+                follow = atBottom();
+            }
+        });
+        // Scroll after the transcript has really changed size, not before.
+        transcript.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                if (follow) {
+                    SwingUtilities.invokeLater(ChatPanel.this::scrollToBottomNow);
+                }
+            }
+        });
+        scroll.getViewport().addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override
+            public void componentResized(java.awt.event.ComponentEvent e) {
+                if (follow) {
+                    SwingUtilities.invokeLater(ChatPanel.this::scrollToBottomNow);
+                }
+            }
+        });
     }
 
+    private boolean atBottom() {
+        JScrollBar b = scroll.getVerticalScrollBar();
+        return b.getValue() + b.getVisibleAmount() >= b.getMaximum() - 24;
+    }
+
+    /** Pins the view to the bottom again and scrolls there once layout settles. */
     private void scrollToBottom() {
-        SwingUtilities.invokeLater(() -> SwingUtilities.invokeLater(() -> {
-            JScrollBar b = scroll.getVerticalScrollBar();
-            b.setValue(b.getMaximum());
-        }));
+        follow = true;
+        SwingUtilities.invokeLater(this::scrollToBottomNow);
+    }
+
+    private void scrollToBottomNow() {
+        if (!follow) {
+            return;
+        }
+        transcript.validate();
+        JScrollBar b = scroll.getVerticalScrollBar();
+        scrollingProgrammatically = true;
+        try {
+            b.setValue(b.getMaximum() - b.getVisibleAmount());
+        } finally {
+            scrollingProgrammatically = false;
+        }
+        lastScrollValue = b.getValue();
     }
 
     private void openLink(String target) {
@@ -859,6 +1051,7 @@ public final class ChatPanel extends JPanel {
                 case "Task": case "Agent": return "Agent";
                 case "TodoWrite": return "To-dos";
                 case "MultiEdit": return "Edit";
+                case "ExitPlanMode": return "Plan";
                 default:
                     if (tool.startsWith("mcp__")) {
                         int i = tool.lastIndexOf("__");
@@ -894,6 +1087,21 @@ public final class ChatPanel extends JPanel {
                 default:
                     return "";
             }
+        }
+
+        /** Plain-text hint for the activity row, e.g. the command or file name. */
+        String shortSummary() {
+            String path = Json.str(toolInput, "file_path");
+            if (path != null) {
+                return new File(path).getName();
+            }
+            for (String key : new String[]{"command", "pattern", "query", "url", "description"}) {
+                String v = Json.str(toolInput, key);
+                if (v != null) {
+                    return firstLine(v, 60);
+                }
+            }
+            return null;
         }
 
         private String fileLink(String path) {
@@ -986,6 +1194,7 @@ public final class ChatPanel extends JPanel {
             b.addActionListener(e -> {
                 if (!resolved) {
                     action.run();
+                    scrollToBottom(); // show what Claude does next
                 }
             });
             buttons.add(b);
@@ -998,6 +1207,9 @@ public final class ChatPanel extends JPanel {
             resolved = true;
             onCancel = null;
             openCards.remove(this);
+            if (openCards.isEmpty()) {
+                resumeActivity();
+            }
             remove(buttons);
             JLabel o = new JLabel(text);
             o.setForeground(color);

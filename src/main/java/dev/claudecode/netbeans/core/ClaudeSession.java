@@ -45,6 +45,29 @@ public final class ClaudeSession {
         default void onToolUse(String toolUseId, String name, Map<String, Object> input) {
         }
 
+        /** Claude started a thinking block. */
+        default void onThinkingStart() {
+        }
+
+        /** Thinking text, when the CLI provides it (it is often withheld; then this isn't called). */
+        default void onThinkingDelta(String text) {
+        }
+
+        /** Running estimate of the tokens in the current thinking block. */
+        default void onThinkingTokens(int estimatedTokens) {
+        }
+
+        default void onThinkingEnd() {
+        }
+
+        /** Claude is writing the input for a tool call; {@code chars} is how much it has written so far. */
+        default void onToolInputProgress(String toolName, int chars) {
+        }
+
+        /** A one-line description of what Claude is currently doing. */
+        default void onTaskSummary(String summary) {
+        }
+
         default void onToolResult(String toolUseId, String text, boolean isError) {
         }
 
@@ -282,6 +305,18 @@ public final class ClaudeSession {
                     listener.onInit(sessionId, model);
                 } else if ("status".equals(sub)) {
                     listener.onStatus(Json.str(o, "status"));
+                } else if ("thinking_tokens".equals(sub)) {
+                    Object n = o.get("estimated_tokens");
+                    if (n instanceof Number) {
+                        listener.onThinkingTokens(((Number) n).intValue());
+                    }
+                } else if ("task_summary".equals(sub)) {
+                    String detail = Json.str(o, "detail");
+                    if (detail != null && !detail.isBlank()) {
+                        listener.onTaskSummary(detail.strip());
+                    }
+                } else if (sub != null && sub.contains("retry")) {
+                    listener.onStatus("retrying");
                 } else if ("compact_boundary".equals(sub)) {
                     listener.onStatus("compacted");
                 }
@@ -291,16 +326,7 @@ public final class ClaudeSession {
                 if (!topLevel) {
                     break;
                 }
-                Map<String, Object> ev = Json.map(o.get("event"));
-                if ("content_block_delta".equals(Json.str(ev, "type"))) {
-                    Map<String, Object> delta = Json.map(ev.get("delta"));
-                    if ("text_delta".equals(Json.str(delta, "type"))) {
-                        String t = Json.str(delta, "text");
-                        if (t != null) {
-                            listener.onTextDelta(t);
-                        }
-                    }
-                }
+                handleStreamEvent(Json.map(o.get("event")));
                 break;
             }
             case "assistant": {
@@ -349,6 +375,67 @@ public final class ClaudeSession {
                 }
                 listener.onTurnComplete(new TurnResult(Json.str(o, "subtype"), Json.bool(o, "is_error", false),
                         number(o.get("total_cost_usd")), (long) number(o.get("duration_ms")), Json.str(o, "result")));
+                break;
+            }
+            default:
+                break;
+        }
+    }
+
+    /** Content blocks of the message being streamed, by index: their type and (for tools) name. */
+    private final Map<Long, String[]> openBlocks = new java.util.HashMap<>();
+    private final Map<Long, Integer> toolInputChars = new java.util.HashMap<>();
+
+    private void handleStreamEvent(Map<String, Object> ev) {
+        String et = Json.str(ev, "type");
+        if (et == null) {
+            return;
+        }
+        Long index = ev.get("index") instanceof Number ? ((Number) ev.get("index")).longValue() : null;
+        switch (et) {
+            case "message_start":
+                openBlocks.clear();
+                toolInputChars.clear();
+                break;
+            case "content_block_start": {
+                Map<String, Object> block = Json.map(ev.get("content_block"));
+                String bt = Json.str(block, "type");
+                if (index != null && bt != null) {
+                    openBlocks.put(index, new String[]{bt, Json.str(block, "name")});
+                }
+                if ("thinking".equals(bt) || "redacted_thinking".equals(bt)) {
+                    listener.onThinkingStart();
+                } else if ("tool_use".equals(bt)) {
+                    listener.onToolInputProgress(Json.str(block, "name"), 0);
+                }
+                break;
+            }
+            case "content_block_delta": {
+                Map<String, Object> delta = Json.map(ev.get("delta"));
+                String dt = Json.str(delta, "type");
+                if ("text_delta".equals(dt)) {
+                    String t = Json.str(delta, "text");
+                    if (t != null) {
+                        listener.onTextDelta(t);
+                    }
+                } else if ("thinking_delta".equals(dt)) {
+                    String t = Json.str(delta, "thinking");
+                    if (t != null && !t.isEmpty()) {
+                        listener.onThinkingDelta(t);
+                    }
+                } else if ("input_json_delta".equals(dt) && index != null) {
+                    String part = Json.str(delta, "partial_json");
+                    int chars = toolInputChars.merge(index, part == null ? 0 : part.length(), Integer::sum);
+                    String[] info = openBlocks.get(index);
+                    listener.onToolInputProgress(info != null ? info[1] : null, chars);
+                }
+                break;
+            }
+            case "content_block_stop": {
+                String[] info = index == null ? null : openBlocks.remove(index);
+                if (info != null && ("thinking".equals(info[0]) || "redacted_thinking".equals(info[0]))) {
+                    listener.onThinkingEnd();
+                }
                 break;
             }
             default:
