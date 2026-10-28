@@ -24,7 +24,7 @@ import org.openide.util.NbBundle.Messages;
 @ActionRegistration(displayName = "#CTL_SendSelectionAction")
 @ActionReferences({
     @ActionReference(path = "Menu/Tools", position = 152),
-    @ActionReference(path = "Editors/Popup", position = 4000, separatorBefore = 3990),
+    @ActionReference(path = "Editors/Popup", position = 4050, separatorBefore = 4040),
     @ActionReference(path = "Shortcuts", name = "DO-K")
 })
 @Messages("CTL_SendSelectionAction=Send Selection to Claude Code")

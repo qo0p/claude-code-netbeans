@@ -13,7 +13,7 @@ import org.openide.util.NbBundle.Messages;
 @ActionID(category = "Window", id = "dev.claudecode.netbeans.actions.OpenChatAction")
 @ActionRegistration(displayName = "#CTL_OpenChatAction")
 @ActionReferences({
-    @ActionReference(path = "Menu/Tools", position = 146, separatorBefore = 145),
+    @ActionReference(path = "Menu/Tools", position = 146),
     @ActionReference(path = "Menu/Window", position = 222),
     @ActionReference(path = "Shortcuts", name = "D-ESCAPE")
 })

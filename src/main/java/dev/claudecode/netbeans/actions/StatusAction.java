@@ -17,7 +17,7 @@ import org.openide.util.NbBundle.Messages;
 
 @ActionID(category = "Tools", id = "dev.claudecode.netbeans.actions.StatusAction")
 @ActionRegistration(displayName = "#CTL_StatusAction")
-@ActionReference(path = "Menu/Tools", position = 154)
+@ActionReference(path = "Menu/Tools", position = 154, separatorAfter = 155)
 @Messages("CTL_StatusAction=Claude Code Status")
 public final class StatusAction implements ActionListener {
 
