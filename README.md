@@ -14,7 +14,7 @@ A NetBeans module that brings **Claude Code** into Apache NetBeans, like the off
 - **Edits open as a NetBeans diff.** Accept or Reject in the diff tab or in the chat. *Accept all edits* switches to editing without asking.
 - Commands and other actions ask first: **Allow**, **Always allow** (for this conversation), or **Deny**.
 - The mode menu switches between **Ask before edits**, **Edit automatically**, and **Plan mode**. In plan mode Claude proposes a plan and waits for your approval before touching code.
-- Your current selection (or open file) is sent along with each message while the checkbox above the message box is ticked. *Send Selection to Claude Code* (Ctrl+Alt+K) puts an `@file#L10-20` reference into the message box.
+- To point Claude at code, select it in the editor and use *Send Selection to Claude Code* (Ctrl+Alt+K, or the editor's right-click menu). It puts an `@file#L10-20` reference into the message box. Nothing from the editor is sent unless you add it this way.
 - **Stop** (or Esc) interrupts Claude. **New chat** starts over. **Resume** continues the last conversation.
 
 The chat runs the `claude` CLI in the background, so you need Claude Code installed and signed in (run `claude` once in a terminal to log in). If NetBeans can't find it, set `-J-Dclaude.code.cli=/full/path/to/claude` (see Settings).

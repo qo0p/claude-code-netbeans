@@ -23,7 +23,7 @@ import org.openide.util.NbBundle.Messages;
 @ActionID(category = "Tools", id = "dev.claudecode.netbeans.actions.SendSelectionAction")
 @ActionRegistration(displayName = "#CTL_SendSelectionAction")
 @ActionReferences({
-    @ActionReference(path = "Menu/Tools", position = 152),
+    @ActionReference(path = "Menu/Tools", position = 189),
     @ActionReference(path = "Editors/Popup", position = 4050, separatorBefore = 4040),
     @ActionReference(path = "Shortcuts", name = "DO-K")
 })

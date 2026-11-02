@@ -31,7 +31,6 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
@@ -83,9 +82,7 @@ public final class ChatPanel extends JPanel {
     private final JButton newButton = new JButton("New chat");
     private final JButton resumeButton = new JButton("Resume");
     private final JComboBox<Mode> modeBox = new JComboBox<>(Mode.values());
-    private final JCheckBox contextBox = new JCheckBox();
     private final JLabel status = new JLabel(" ");
-    private final Timer contextTimer;
     private final Timer renderTimer;
 
     private transient ClaudeSession session;
@@ -95,7 +92,6 @@ public final class ChatPanel extends JPanel {
     private boolean projectsStale;
     private boolean busy;
     private boolean changingMode;
-    private transient ChatHost.EditorContext context;
     private HtmlView streaming;
     private final ActivityRow activity = new ActivityRow(this::tickThinking);
     private ThinkingView thinking;
@@ -191,16 +187,12 @@ public final class ChatPanel extends JPanel {
         stopButton.setEnabled(false);
         stopButton.setToolTipText("Stop Claude (Esc)");
 
-        contextBox.setSelected(true);
-        contextBox.setFocusable(false);
-        contextBox.setToolTipText("Send your current editor selection, or the open file's name, along with the message");
         status.setForeground(HtmlView.Theme.dim());
 
         JPanel composer = new JPanel(new BorderLayout(6, 4));
         composer.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, HtmlView.Theme.border()),
                 BorderFactory.createEmptyBorder(6, 8, 6, 8)));
-        composer.add(contextBox, BorderLayout.NORTH);
         composer.add(inputScroll, BorderLayout.CENTER);
         composer.add(buttons, BorderLayout.EAST);
         composer.add(status, BorderLayout.SOUTH);
@@ -231,9 +223,6 @@ public final class ChatPanel extends JPanel {
 
         renderTimer = new Timer(60, e -> renderStreaming());
         renderTimer.setRepeats(false);
-        contextTimer = new Timer(500, e -> refreshContext());
-        contextTimer.start();
-        refreshContext();
         installAutoScroll();
         showWelcome();
     }
@@ -255,7 +244,6 @@ public final class ChatPanel extends JPanel {
     }
 
     public void shutdown() {
-        contextTimer.stop();
         renderTimer.stop();
         stopSession();
     }
@@ -270,8 +258,7 @@ public final class ChatPanel extends JPanel {
         if (session == null && waitForProjects()) {
             return; // send() runs again once NetBeans has opened its projects
         }
-        refreshContext();
-        ChatHost.EditorContext ctx = contextBox.isEnabled() && contextBox.isSelected() ? context : null;
+        ChatHost.EditorContext ctx = null; // editor context is added explicitly with Send Selection (Ctrl+Alt+K)
         if (!ensureSession(null)) {
             return;
         }
@@ -438,29 +425,6 @@ public final class ChatPanel extends JPanel {
         if (tellCli && session != null) {
             session.setPermissionMode(m.cli);
         }
-    }
-
-    // ------------------------------------------------------------------ context
-
-    private void refreshContext() {
-        ChatHost.EditorContext ctx;
-        try {
-            ctx = host.editorContext();
-        } catch (RuntimeException e) {
-            ctx = null;
-        }
-        context = ctx;
-        if (ctx == null) {
-            contextBox.setText("No file open in the editor");
-            contextBox.setEnabled(false);
-            return;
-        }
-        contextBox.setEnabled(true);
-        String name = new File(ctx.filePath()).getName();
-        contextBox.setText(ctx.hasSelection()
-                ? "Include selection: " + name + (ctx.startLine() == ctx.endLine()
-                        ? " line " + ctx.startLine() : " lines " + ctx.startLine() + "–" + ctx.endLine())
-                : "Include open file: " + name);
     }
 
     // ------------------------------------------------------------------ open projects
@@ -997,7 +961,7 @@ public final class ChatPanel extends JPanel {
         v.setBodyHtml("<h3>Claude Code</h3>"
                 + "<p class=\"dim\">Ask about your code, or ask Claude to change it. "
                 + "Proposed edits open as a diff for you to accept or reject.</p>"
-                + "<p class=\"dim\">Your editor selection is sent along when the box above the message field is ticked. "
+                + "<p class=\"dim\">To point Claude at code, select it in the editor and press Ctrl+Alt+K (Send Selection to Claude Code). "
                 + "Use the menu at the top to let Claude edit without asking, or to plan first.</p>"
                 + "<p class=\"dim\">Plugin " + Markdown.escape(dev.claudecode.netbeans.core.PluginVersion.longText()) + "</p>");
         append(v);

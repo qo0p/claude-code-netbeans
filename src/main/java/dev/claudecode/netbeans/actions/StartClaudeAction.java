@@ -27,7 +27,7 @@ import org.openide.util.NbBundle.Messages;
 @ActionID(category = "Tools", id = "dev.claudecode.netbeans.actions.StartClaudeAction")
 @ActionRegistration(displayName = "#CTL_StartClaudeAction")
 @ActionReferences({
-    @ActionReference(path = "Menu/Tools", position = 150),
+    @ActionReference(path = "Menu/Tools", position = 187),
     @ActionReference(path = "Shortcuts", name = "DOS-T")
 })
 @Messages("CTL_StartClaudeAction=Start Claude Code in Terminal")
